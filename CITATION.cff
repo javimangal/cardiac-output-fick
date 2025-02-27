@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+title: >-
+  The Two-Gasometry Indirect Fick Method for Cardiac Output
+  Measurement in Critical Patients
+message: 'If you use this software, please cite it as below.'
+type: software
+authors:
+  - family-names: Mancilla Galindo
+    given-names: Javier
+    orcid: 'https://orcid.org/0000-0002-0718-467X'
+    affiliation: Utrecht University
+    email: j.mancillagalindo@uu.nl
+  - given-names: Esmeralda
+    family-names: 'Garza-Santiago '
+    orcid: 'https://orcid.org/0000-0002-6370-7922'
+  - given-names: 'Liliana Aline '
+    family-names: Fernández-Urrutia
+    orcid: 'https://orcid.org/0009-0001-9252-2636'
+  - given-names: Ashuin
+    family-names: Kammar-García
+    orcid: 'https://orcid.org/0000-0002-3875-0945'
+repository-code: 'https://github.com/javimangal/cardiac-output-fick'
+keywords:
+  - cardiac output
+  - blood gas analysis
+  - echocardiography
+  - intensive care unit
+  - Fick method
+  - critically ill patients
+license: MIT
+version: 0.0.1
+date-released: '2025-02-27'

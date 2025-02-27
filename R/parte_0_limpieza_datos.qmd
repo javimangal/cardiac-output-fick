@@ -1,0 +1,1067 @@
+---
+title: "Gasto cardíaco por ECOTT vs Fick"
+subtitle: "Parte 0: Limpieza de datos e impresión inicial"
+author: 
+  - "J. Mancilla Galindo, E. Garza Santiago, L.A. Fernández Urrutia"
+date: today
+execute: 
+  echo: false
+  warning: false
+format:
+  pdf: 
+    toc: false
+    documentclass: scrartcl
+  docx: 
+    reference-doc: ../docs/custom-reference-doc.docx
+editor: source
+---
+
+```{r}
+#| include: false  
+
+# Create directories for sub-folders  
+inputfolder <- "../data/raw"
+psfolder <- "../data/processed"
+tempfolder <- "../data/temp"
+figfolder <- "../results/output_figures"
+tabfolder <- "../results/output_tables"
+
+dir.create(inputfolder, showWarnings = FALSE)
+dir.create(psfolder, showWarnings = FALSE)
+dir.create(tempfolder, showWarnings = FALSE)
+dir.create(figfolder, showWarnings = FALSE)
+dir.create(tabfolder, showWarnings = FALSE)
+```
+
+```{r}
+#| include: false  
+
+## Packages used in this session
+
+if (!require("pacman", quietly = TRUE)) {
+  install.packages("pacman")
+}
+
+pacman::p_load(
+  tidyverse,  # Used for basic data handling and visualization.
+  overviewR,  # Used to assess missing data.
+  readxl,     # Read file in excel format. 
+  gt,         # Used to print html tables.  
+  ggrepel,    # Used to add text to ggplot2.
+  haven,      # Used to write SPSS files.
+  styler,     # Used to format code.
+  report      # Used to cite packages used in this session.   
+)
+```
+
+## Session and package dependencies
+
+```{r}
+#| echo: false  
+
+# remove clutter
+session <- sessionInfo()
+session$BLAS <- NULL
+session$LAPACK <- NULL
+session$loadedOnly <- NULL
+# write log file
+writeLines(
+  capture.output(print(session, locale = FALSE)),
+  paste0("sessions/",lubridate::today(), "_session_Part_0.txt")
+)                                   # Change name to match your new .qmd file.
+
+session
+```
+
+\pagebreak
+
+# Load data and import attributes from dataset dictionary
+
+```{r}
+#| include: false  
+
+# Inspect raw file 
+excel_sheets(file.path(inputfolder,"GC X FICK vs ECOTT.xlsm"))
+```
+
+```{r}
+#| echo: true
+
+# Load data  
+raw_data <- read_excel(
+  file.path(inputfolder,"GC X FICK vs ECOTT.xlsm"),
+  sheet = "Sheet1",
+  range = "A6:AZ91",
+  na = "NA"
+  )
+
+# Load variable dictionary 
+dictionary <- read_excel(
+  file.path(inputfolder,"Variables dictionary ventilación mecánica corregido.xlsx"),
+  range = cell_cols("A:I"),
+  na = "."
+  )
+```
+
+```{r}
+#| include: false
+# Check if column names in raw_data match the values of the dictionary$Variable column
+all(names(raw_data) %in% dictionary$Variable)
+```
+
+```{r}
+#| include: false
+# Show which variable names in raw_data are not in the dictionary$Variable column
+setdiff(names(raw_data), dictionary$Variable)
+```
+
+```{r}
+#| include: false
+# Check which variable names in the dictionary$Variable column are not in raw_data
+setdiff(dictionary$Variable, names(raw_data))
+```
+
+Manual inspection of the raw data and the dictionary revealed that the variable names in the raw data are not the same as the variable names in the dictionary. These were checked with the clinical team to update the dataset dictionary for the correct variable names.
+
+```{r}
+# Load "import_variable_attributes" function
+source("scripts/import_variable_attributes.R")
+
+# Import data attributes from dictionary
+data <- import_variable_attributes(raw_data, dictionary)
+```
+
+The number of unique participants in the study is:
+
+```{r}
+# Count the number of unique ID
+data %>% 
+  summarize(n = n_distinct(ID)) %>% gt
+```
+
+Of these, the number of unique participants and participants with more than one measurement is as follows:
+
+```{r}
+# Summary table of the number of rows with a single appearance in ID and those with more than 1 appearance: 
+data %>% 
+  group_by(ID) %>% 
+  summarize(Measurements = n()) %>% 
+  count(Measurements) %>% 
+  gt
+```
+
+\pagebreak
+
+# Explore data
+
+## Ventilation Parameters
+
+```{r}
+#| include: false
+# Inspect levels for ventilatory modes
+data %>% 
+  select(ventilation_mode) %>% 
+  map(levels)
+```
+
+```{r}
+#| include: false
+table(data$ventilation_mode)
+```
+
+```{r}
+#| include: false
+# Collapse CPAP and CPAP|PS into a single category 
+data$ventilation_mode <- fct_collapse(data$ventilation_mode,
+  "CPAP|PS" = c("CPAP", "CPAP | PS")
+  )
+```
+
+```{r}
+#| include: false
+# Inspect levels for ventilatory modes
+data %>% 
+  select(ventilation_mode) %>% 
+  map(levels)
+```
+
+```{r}
+ventilation_variables <- colnames(data[46:51])
+
+overview_na(data %>% select(ventilation_variables))
+```
+
+Missing data likely corresponding to participants without mechanical ventilation. I will filter and check.
+
+\pagebreak
+
+#### Missing data per ventilation mode
+
+```{r}
+#| layout-ncol: 2
+#| fig-cap: 
+#|   - "MR, Without MV, Spontaneous"
+#|   - "HFNC"
+#|   - "CPAP|PS"
+#|   - "ACV"
+
+overview_na(
+  data %>% 
+    select(ventilation_variables) %>%  
+    filter(ventilation_mode %in% c('MR','Without MV','Spontaneous')) %>% 
+    select(-ventilation_mode)
+)
+
+overview_na(
+  data %>% 
+    select(ventilation_variables) %>%  
+    filter(ventilation_mode == 'HFNC')%>% 
+    select(-ventilation_mode)
+)
+
+overview_na(
+  data %>% 
+    select(ventilation_variables) %>%  
+    filter(ventilation_mode == 'CPAP|PS')%>% 
+    select(-ventilation_mode)
+)
+
+overview_na(
+  data %>% 
+    select(ventilation_variables) %>%  
+    filter(ventilation_mode == 'ACV')%>% 
+    select(-ventilation_mode)
+)
+```
+
+\pagebreak
+
+## Other variables
+
+```{r}
+overview_na(data %>% select(!ventilation_variables))
+```
+
+There are only missing values in the comorbidities column, corresponding to participants with no comorbidities reported.
+
+The following function was used to check if diagnosis, comorbidity, and other baseline values matched for all rows with the same ID. Any unmatches were corroborated with the medical team and corrected.
+
+```{r}
+#| eval: false
+#| echo: true
+
+check_non_unique <- function(data, id_col, x_col) {
+  # Group by ID and summarize to count unique values of x for each ID
+  non_unique_ids <- data %>%
+    group_by(!!sym(id_col)) %>% # Group by the ID column
+    summarize(unique_x_count = n_distinct(!!sym(x_col))) %>% # Count unique values of x
+    filter(unique_x_count > 1) %>% # Filter IDs where x is not unique
+    pull(!!sym(id_col)) # Pull the IDs where x is not unique
+
+  # Return the non-unique IDs
+  return(non_unique_ids)
+}
+```
+
+```{r}
+#| eval: false
+#| include: false 
+# Function to loop through all columns in the dataset (excluding ID)
+check_all_columns <- function(data, id_col) {
+  
+  # Get all column names except the ID column
+  columns_to_check <- setdiff(colnames(data), id_col)
+  
+  # Initialize an empty list to store the results
+  non_unique_summary <- list()
+  
+  # Loop through each column and apply the check_non_unique_x function
+  for (col in columns_to_check) {
+    non_unique_ids <- check_non_unique(data, id_col, col)
+    
+    # If there are non-unique values, add the results to the list
+    if (length(non_unique_ids) > 0) {
+      non_unique_summary[[col]] <- non_unique_ids
+    }
+  }
+  
+  # Return the summary of non-unique IDs for each column
+  return(non_unique_summary)
+}
+
+check_all_columns(data, "ID")
+```
+
+\pagebreak
+
+# Weight and BMI
+
+There are slight variations in `weight` for values reported in the same individual. When consulted with the clinical team, such variations were said to be due to weight loss during hospital stay. It is desirable to use the exact calculations for body surface area and cardiac output calculations. However, for the reporting of baseline BMI, I will use the higher weight value at admission.
+
+```{r}
+#| echo: true 
+data <- data %>% 
+  group_by(ID) %>% 
+  mutate(BMI = round((max(weight)/(height^2)),2)) %>% 
+  ungroup() %>% 
+  relocate(BMI, .after = height)
+
+attr(data$BMI, "label") <- "Body Mass Index"
+attr(data$BMI, "unit") <- "kg/m²"
+```
+
+```{r}
+#| echo: true 
+data <- data %>% 
+  mutate(
+    obesity = factor(case_when(
+      BMI < 18.5 ~ "Underweight",
+      BMI >= 18.5 & BMI < 25 ~ "Normal",
+      BMI >= 25 & BMI < 30 ~ "Overweight",
+      BMI >= 30 & BMI < 35 ~ "Obesity class I",
+      BMI >= 35 & BMI < 40 ~ "Obesity class II",
+      BMI >= 40 ~ "Obesity class III"
+      )) %>% 
+      fct_relevel(
+        c("Underweight", "Normal", "Overweight", 
+          "Obesity class I", "Obesity class II", "Obesity class III")
+        )) %>% 
+  relocate(obesity, .after = BMI)
+
+attr(data$obesity, "label") <- "Obesity status"
+```
+
+\pagebreak
+
+# Body surface area
+
+Recalculation of body surface area to corroborate values in data:
+
+```{=tex}
+\begin{align*}
+BSA = \sqrt{\frac{height \times weight}{3600}}
+\end{align*}
+```
+```{r}
+data <- data %>% 
+  mutate(
+    body_surface_area_recalculated = sqrt(((height * 100) * weight) / 3600)
+  )
+```
+
+Check if recalculated BSA values are within the range indicated in dictionary.
+
+```{r}
+dictionary %>% 
+  filter(Variable == "body_surface_area") %>% 
+  select(1:5) %>% gt
+```
+
+```{r}
+data %>% select(body_surface_area_recalculated) %>% 
+  summarize(min = min(.), max = max(.)) %>%
+  round(2) %>% gt
+```
+
+```{r}
+ggplot(data, aes(x = body_surface_area, y = body_surface_area_recalculated)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "BSA reported",
+    y = "BSA recalculated"
+  ) +
+  theme_classic()
+```
+
+I will thus replace the BSA values in the dataset with the recalculated values.
+
+```{r}
+data <- data %>% 
+  mutate(
+    body_surface_area = body_surface_area_recalculated
+  ) %>% 
+  select(-body_surface_area_recalculated)
+```
+
+\pagebreak
+
+# Cardiac output (CO)
+
+I will recalculate cardiac output using the echocardiographic (ECOTT) and Fick methods to corroborate.
+
+## ECOTT
+
+#### LVOTa
+
+The left ventricle outflow tract area (LVOTa) is calculated using the formula:
+
+```{=tex}
+\begin{align*}
+LVOTa = \pi (d/2)^{2}
+\end{align*}
+```
+> where d = Left ventricle outflow tract diameter (LVOTd)
+
+```{r}
+data$LVOTa_recalculated = pi*(data$LVOTd/2)^2
+```
+
+```{r}
+LVOT_data <- data %>% 
+  select(ID, LVOTd, LVOTa, LVOTa_recalculated) %>%
+  mutate(
+    LVOTa_diff = LVOTa - LVOTa_recalculated,
+    LVOTa_diff_abs = abs(LVOTa_diff)
+  )
+
+# Save in psfolder as xlsx
+writexl::write_xlsx(LVOT_data, file.path(psfolder,"LVOT_corroborate.xlsx"))
+```
+
+```{r}
+corroborate <- c("ID_2", "ID_8", "ID_15", "ID_24")
+```
+
+```{r}
+ggplot(data, aes(x = LVOTa, y = LVOTa_recalculated)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  geom_text_repel(
+    data = data %>% filter(ID %in% corroborate),
+    aes(label = ID)
+  ) +
+  labs(
+    x = "LVOTa reported (cm²)",
+    y = "LVOTa recalculated (cm²)"
+  ) +
+  theme_classic()
+
+# Save in figfolder
+ggsave(file.path(figfolder,"LVOTa_corroborate.png"), width = 6, height = 6)
+```
+
+The highlighted IDs in the plot were selected for manual inspection of the LVOTd and LVOTa values due to the large differences in recalculated values which cannot be explained by rounding error. The clinical team was unable to trace back which of the two values was incorrect (LVOTd or LVOTa). Thus, these participants are excluded from subsequent analyses.
+
+```{r}
+data <- data %>% 
+  filter(!ID %in% corroborate)
+```
+
+\pagebreak
+
+After exclusion, the number of unique participants in the study is:
+
+```{r}
+# Count the number of unique ID
+data %>% 
+  summarize(n = n_distinct(ID)) %>% gt
+```
+
+```{r}
+ggplot(data, aes(x = LVOTa, y = LVOTa_recalculated)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "LVOTa reported (cm²)",
+    y = "LVOTa recalculated (cm²)"
+  ) +
+  theme_classic()
+```
+
+I will use the recalculated LVOTa values for subsequent analyses. However, I will provide plots of reported values versus recalculated values for the record.
+
+Check if the recalculated LVOTa values are within the range indicated in dictionary.
+
+```{r}
+dictionary %>% 
+  filter(Variable == "LVOTa") %>% 
+  select(1:5) %>% gt
+```
+
+```{r}
+data %>% select(LVOTa_recalculated) %>% 
+  summarize(min = min(.), max = max(.)) %>%
+  round(2) %>% gt
+```
+
+\pagebreak
+
+#### Stroke Volume (SV)
+
+The stroke volume (SV) is calculated using the formula:
+
+```{=tex}
+\begin{align*}
+SV = LVOTa \times VTI
+\end{align*}
+```
+> where VTI is the velocity time integral.
+
+```{r}
+data <- data %>% mutate(
+  SV_1_recalculated = LVOTa_recalculated * VTI_1,
+  SV_2_recalculated = LVOTa_recalculated * VTI_2,
+  SV_3_recalculated = LVOTa_recalculated * VTI_3
+)
+```
+
+Check if recalculated SV values are within the range indicated in dictionary.
+
+```{r}
+dictionary %>% 
+  filter(Variable == "SV_1") %>% 
+  select(1:5) %>% gt
+```
+
+```{r}
+data %>% select(c(SV_1_recalculated, SV_2_recalculated, SV_3_recalculated)) %>% 
+  summarize(min = min(.), max = max(.)) %>%
+  round(2) %>% gt
+```
+
+```{r}
+ggplot(data, aes(x = SV_1, y = SV_1_recalculated)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "SV 1 reported",
+    y = "SV 1 recalculated"
+  ) +
+  theme_classic()
+```
+
+```{r}
+ggplot(data, aes(x = SV_2, y = SV_2_recalculated)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "SV 2 reported",
+    y = "SV 2 recalculated"
+  ) +
+  theme_classic()
+```
+
+```{r}
+ggplot(data, aes(x = SV_3, y = SV_3_recalculated)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "SV 3 reported",
+    y = "SV 3 recalculated"
+  ) +
+  theme_classic()
+
+```
+
+\pagebreak
+
+#### Cardiac Output (CO)
+
+Cardiac output is calculated as:
+
+```{=tex}
+\begin{align*}
+CO = SV \times HR
+\end{align*}
+```
+> where HR is the heart rate.
+
+```{r}
+data <- data %>% mutate(
+  CO_1_recalculated = SV_1_recalculated * heart_rate / 1000,
+  CO_2_recalculated = SV_2_recalculated * heart_rate / 1000,
+  CO_3_recalculated = SV_3_recalculated * heart_rate / 1000
+)
+```
+
+Check if recalculated CO values are within the range indicated in dictionary.
+
+```{r}
+dictionary %>% 
+  filter(Variable == "cardiac_output_TTE") %>% 
+  select(1:5) %>% gt
+```
+
+```{r}
+data %>% select(c(CO_1_recalculated, CO_2_recalculated, CO_3_recalculated)) %>% 
+  summarize(min = min(.), max = max(.)) %>%
+  round(2) %>% gt
+```
+
+```{r}
+ggplot(data, aes(x = CO_TTE_1, y = CO_1_recalculated)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "CO 1 reported",
+    y = "CO 1 recalculated"
+  ) +
+  theme_classic()
+```
+
+```{r}
+ggplot(data, aes(x = CO_TTE_2, y = CO_2_recalculated)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "CO 2 reported",
+    y = "CO 2 recalculated"
+  ) +
+  theme_classic()
+```
+
+```{r}
+ggplot(data, aes(x = CO_TTE_3, y = CO_3_recalculated)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "CO 3 reported",
+    y = "CO 3 recalculated"
+  ) +
+  theme_classic()
+```
+
+\pagebreak
+
+The final value of cardiac output will be the average of the three measurements.
+
+```{r}
+data <- data %>% 
+  mutate(
+    CO_recalculated = (CO_1_recalculated + CO_2_recalculated + CO_3_recalculated) / 3
+  )
+```
+
+```{r}
+ggplot(data, aes(x = cardiac_output_TTE, y = CO_recalculated)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "CO (averaged) reported",
+    y = "CO (averaged) recalculated"
+  ) +
+  theme_classic()
+```
+
+\pagebreak
+
+#### Cardiac index
+
+Cardiac index is calculated as:
+
+```{=tex}
+\begin{align*}
+CI = CO/BSA
+\end{align*}
+```
+> where BSA is the body surface area.
+
+```{r}
+#| echo: true
+# Substitute values of LVOTa, SV, and CO with recalculated values 
+data <- data %>% 
+  mutate(
+    LVOTa = LVOTa_recalculated,
+    SV_1 = SV_1_recalculated,
+    SV_2 = SV_2_recalculated,
+    SV_3 = SV_3_recalculated,
+    CO_TTE_1 = CO_1_recalculated,
+    CO_TTE_2 = CO_2_recalculated,
+    CO_TTE_3 = CO_3_recalculated,
+    cardiac_output_TTE = CO_recalculated,
+    cardiac_index_TTE = CO_recalculated / body_surface_area,
+    CI_TTE_1 = CO_1_recalculated / body_surface_area,
+    CI_TTE_2 = CO_2_recalculated / body_surface_area,
+    CI_TTE_3 = CO_3_recalculated / body_surface_area
+  ) %>% 
+  select(-contains("recalculated"))
+```
+
+Check if recalculated CI values is within the range indicated in dictionary.
+
+```{r}
+# Load updated variable dictionary with recalculated variables 
+dictionary <- read_excel(
+  file.path(inputfolder,"Variable dictionary final.xlsx"),
+  range = cell_cols("A:I"),
+  na = "."
+  )
+
+dictionary %>% 
+  filter(Variable == "cardiac_index_TTE") %>% 
+  select(1:5) %>% gt
+```
+
+```{r}
+data %>% select(cardiac_index_TTE) %>% 
+  summarize(min = min(.), max = max(.)) %>%
+  round(2) %>% gt
+```
+
+\pagebreak
+
+## Fick method
+
+Cardiac output with the Fick method is calculated as:
+
+```{=tex}
+\begin{align*}
+CO = \frac{(DavO_2 \times 100) / CaO_2}{DavO_2}
+\end{align*}
+```
+> where: DavO2 = Arteriovenous oxygen difference, CaO2 = Arterial oxygen content.
+
+Before recalculating CO, I will recalculate DavO2 and CaO2.
+
+#### CaO2
+
+Arterial oxygen content (CaO2) is calculated as:
+
+```{=tex}
+\begin{align*}
+CaO_2 = (Hb \times 1.34 \times SaO_2) + (0.0031 \times PaO_2)
+\end{align*}
+```
+> where: Hb = Hemoglobin, SaO2 = arterial oxygen saturation, PaO2 = partial pressure of oxygen.
+
+```{r}
+data <- data %>% 
+  mutate(
+    CaO2_recalculated = (hemoglobin * 1.34 * SaO2) + (0.0031 * PaO2)
+  )
+```
+
+Check if recalculated CaO2 values are within the range indicated in dictionary.
+
+```{r}
+dictionary %>% 
+  filter(Variable == "CaO2") %>% 
+  select(1:5) %>% gt
+```
+
+```{r}
+data %>% select(CaO2_recalculated) %>% 
+  summarize(min = min(.), max = max(.)) %>%
+  round(2) %>% gt
+```
+
+```{r}
+ggplot(data, aes(x = CaO2, y = CaO2_recalculated)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "CaO2 reported",
+    y = "CaO2 recalculated"
+  ) +
+  theme_classic()
+```
+
+\pagebreak
+
+#### CvO2
+
+Venous oxygen content (CvO2) is calculated as:
+
+```{=tex}
+\begin{align*}
+CvO_2 = (Hb \times 1.34 \times SvO_2) + (0.0031 \times PvO_2)
+\end{align*}
+```
+> where:Hb = Hemoglobin, SvO2 = venous oxygen saturation, PvO2 = Partial pressure of oxygen in venous blood.
+
+```{r}
+data <- data %>% 
+  mutate(
+    CvO2_recalculated = (hemoglobin * 1.34 * SvO2) + (0.0031 * PvO2)
+  )
+```
+
+Check if recalculated CaO2 values are within the range indicated in dictionary.
+
+```{r}
+dictionary %>% 
+  filter(Variable == "CvO2") %>% 
+  select(1:5) %>% gt
+```
+
+```{r}
+data %>% select(CvO2_recalculated) %>% 
+  summarize(min = min(.), max = max(.)) %>%
+  round(2) %>% gt
+```
+
+```{r}
+ggplot(data, aes(x = CvO2, y = CvO2_recalculated)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "CvO2 reported",
+    y = "CvO2 recalculated"
+  ) +
+  theme_classic()
+```
+
+\pagebreak
+
+#### DavO2
+
+Arteriovenous oxygen difference is calculated as:
+
+```{=tex}
+\begin{align*}
+DavO_2 = CaO_2 - CvO_2
+\end{align*}
+```
+
+```{r}
+data <- data %>% 
+  mutate(
+    DavO2_recalculated = CaO2_recalculated - CvO2_recalculated
+  )
+```
+
+Check if recalculated DavO2 values are within the range indicated in dictionary.
+
+```{r}
+dictionary %>% 
+  filter(Variable == "DavO2") %>% 
+  select(1:5) %>% gt
+```
+
+```{r}
+data %>% select(DavO2_recalculated) %>% 
+  summarize(min = min(.), max = max(.)) %>%
+  round(2) %>% gt
+```
+
+```{r}
+ggplot(data, aes(x = DavO2, y = DavO2_recalculated)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "DavO2 reported",
+    y = "DavO2 recalculated"
+  ) +
+  theme_classic()
+```
+
+\pagebreak
+
+#### ExO2
+
+The Oxygen extraction (ExO2) is calculated as:
+
+```{=tex}
+\begin{align*}
+ExO_2 = \frac{(SaO_2 - SvO_2)}{SaO_2}
+\end{align*}
+```
+```{r}
+data <- data %>% 
+  mutate(
+    ExO2_recalculated = ((SaO2 - SvO2) / SaO2)
+  )
+```
+
+Check if recalculated DavO2 values are within the range indicated in dictionary.
+
+```{r}
+dictionary %>% 
+  filter(Variable == "ExO2") %>% 
+  select(1:5) %>% gt
+```
+
+```{r}
+data %>% select(ExO2_recalculated) %>% 
+  summarize(min = min(.), max = max(.)) %>%
+  round(2) %>% gt
+```
+
+```{r}
+ggplot(data, aes(x = ExO2, y = ExO2_recalculated)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "ExO2 reported",
+    y = "ExO2 recalculated"
+  ) +
+  theme_classic()
+```
+
+\pagebreak
+
+#### CO Fick
+
+```{r}
+data <- data %>% 
+  mutate(
+    CO_Fick_recalculated = (( DavO2_recalculated * 100) / CaO2_recalculated) / DavO2_recalculated
+  )
+```
+
+Check if recalculated CI values is within the range indicated in dictionary.
+
+```{r}
+dictionary %>% 
+  filter(Variable == "cardiac_output_Fick") %>% 
+  select(1:5) %>% gt
+```
+
+```{r}
+data %>% select(CO_Fick_recalculated) %>% 
+  summarize(min = min(.), max = max(.)) %>%
+  round(2) %>% gt
+```
+
+```{r}
+ggplot(data, aes(x = cardiac_output_Fick, y = CO_Fick_recalculated)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  labs(
+    x = "CO (Fick) reported",
+    y = "CO (Fick) recalculated"
+  ) +
+  theme_classic()
+```
+
+\pagebreak
+
+#### Cardiac index Fick
+
+Cardiac index is calculated as:
+
+```{=tex}
+\begin{align*}
+CI = CO/BSA
+\end{align*}
+```
+> where BSA is the body surface area.
+
+```{r}
+#| echo: true
+# Substitute values of LVOTa, SV, and CO with recalculated values 
+data <- data %>% 
+  mutate(
+    CaO2 = CaO2_recalculated,
+    CvO2 = CvO2_recalculated,
+    DavO2 = DavO2_recalculated,
+    ExO2 = ExO2_recalculated,
+    cardiac_output_Fick = CO_Fick_recalculated,
+    cardiac_index_Fick = cardiac_output_Fick / body_surface_area
+  ) %>% 
+  select(-contains("recalculated"))
+```
+
+```{r}
+# Import variable attributes from dictionary for the recalculated variables
+data <- import_variable_attributes(data, dictionary)
+```
+
+Check if recalculated CI values is within the range indicated in dictionary.
+
+```{r}
+dictionary %>% 
+  filter(Variable == "cardiac_index_Fick") %>% 
+  select(1:5) %>% gt
+```
+
+```{r}
+data %>% select(cardiac_index_TTE) %>% 
+  summarize(min = min(.), max = max(.)) %>%
+  round(2) %>% gt
+```
+
+\pagebreak
+
+# Diagnosis
+
+```{r}
+# Group by ID and separate the string in data$diagnosis by " | ".
+data %>% 
+  group_by(ID) %>% 
+  summarise(diagnosis = unique(diagnosis)) %>% 
+  separate_rows(diagnosis, sep = " \\| ") %>% 
+  count(diagnosis) %>% 
+  arrange(desc(n)) %>% 
+  gt
+```
+
+\pagebreak
+
+# Comorbidities
+
+```{r}
+# Add the value of the data obesity column to the comoorbidities column 
+data$comorbidities <- ifelse(grepl("Obesity", data$obesity),
+                                    paste0(data$comorbidities, " | Obesity"),
+                                    data$comorbidities)
+
+data$comorbidities <- ifelse(grepl("Overweight", data$obesity),
+                                    paste0(data$comorbidities, " | Overweight"),
+                                    data$comorbidities)
+
+# Optional: Remove leading "NA | " if any
+data$comorbidities <- gsub("^NA \\| ", "", data$comorbidities)
+
+# Group by ID and separate the string in data$comorbidities by " | ".
+data %>% 
+  group_by(ID) %>% 
+  summarise(comorbidities = unique(comorbidities)) %>% 
+  separate_rows(comorbidities, sep = " \\| ") %>% 
+  count(comorbidities) %>% 
+  arrange(desc(n)) %>% 
+  gt
+```
+
+\pagebreak
+
+# Save data
+
+The following sourced script assigns random values of ID for each participant. The script is hidden to preserve confidentiality and prevent re-identification of participants.
+
+```{r}
+#| echo: true
+source("scripts/random_ID_generator.R")
+```
+
+Save as csv file.
+
+```{r}
+#| echo: true
+
+write_csv(data, file.path(psfolder,"cardiac_output_Fick_vs_ECOTT.csv"))
+```
+
+Save as R data file.
+
+```{r}
+#| echo: true
+save(data, file = file.path(psfolder,"cardiac_output_Fick_vs_ECOTT.RData"))
+```
+
+Save as sav file:
+
+```{r}
+#| echo: true
+write_sav(data, file.path(psfolder,"cardiac_output_Fick_vs_ECOTT.sav"))
+```
+
+\pagebreak
+
+# Package References
+
+```{r}
+#| output: asis
+report::cite_packages(session)
+```
+
+```{r}
+#| include: false
+
+# Run this chunk if you wish to clear your environment and unload packages.
+
+pacman::p_unload(negate = TRUE)
+
+rm(list = ls())
+```

@@ -1,0 +1,700 @@
+---
+title: "Gasto cardíaco por ECOTT vs Fick"
+subtitle: "Parte 3: Análisis Índice Cardíaco"
+author: 
+  - "J. Mancilla Galindo, E. Garza Santiago, L.A. Fernández Urrutia"
+  - "A. Kammar-García"
+date: today
+execute: 
+  echo: false
+  warning: false
+format:
+  pdf: 
+    toc: false
+    documentclass: scrartcl
+  docx: 
+    reference-doc: ../docs/custom-reference-doc.docx
+editor: source
+bibliography: ../docs/manuscript/references.bib
+csl: ../docs/manuscript/american-medical-association.csl
+---
+
+```{r}
+#| include: false  
+
+# Create directories for sub-folders  
+inputfolder <- "../data/raw"
+psfolder <- "../data/processed"
+tempfolder <- "../data/temp"
+figfolder <- "../results/output_figures"
+tabfolder <- "../results/output_tables"
+
+dir.create(inputfolder, showWarnings = FALSE)
+dir.create(psfolder, showWarnings = FALSE)
+dir.create(tempfolder, showWarnings = FALSE)
+dir.create(figfolder, showWarnings = FALSE)
+dir.create(tabfolder, showWarnings = FALSE)
+```
+
+```{r}
+#| echo: false 
+
+if (!require("pacman", quietly = TRUE)) {
+  install.packages("pacman")
+}
+
+pacman::p_load(
+  tidyverse,  # Used for basic data handling and visualization.
+  dataverse,  # Retrieve dataset from the Harvard dataverse.
+  table1,     # Used to add labels to variables.
+  mgcv,       # Used to fit generalized additive models.
+  lme4,       # Used to fit linear mixed effects models.
+  irr,        # Used to calculate intraclass correlation coefficient.
+  boot,       # Used to perform bootstrap.
+  gridExtra,  # Used to arrange multiple plots.
+  gt,         # Used to print html tables.  
+  report      # Used to cite packages used in this session.   
+)
+```
+
+```{r}
+#| echo: false  
+
+## Session and package dependencies
+
+# remove clutter
+session <- sessionInfo()
+session$BLAS <- NULL
+session$LAPACK <- NULL
+session$loadedOnly <- NULL
+# write log file
+writeLines(
+  capture.output(print(session, locale = FALSE)),
+  paste0("sessions/",lubridate::today(), "_session_Part_3.txt")
+)                                   # Change name to match your new .qmd file.
+```
+
+```{r}
+# Load dataset from the dataverse
+data_path <- get_file_by_name(
+  filename = "cardiac_output_Fick_vs_ECOTT.RData",
+  dataset = "10.7910/DVN/J4ONSU", 
+  server = "dataverse.harvard.edu")
+
+local_file <- paste0(tempfolder,"/cardiac_output_Fick_vs_ECOTT.RData")
+
+writeBin(data_path, local_file)
+
+load(local_file)
+```
+
+# Cardiac Index
+
+The distribution of cardiac index values for both methods is skewed as shown bellow. 
+
+```{r}
+#| layout-ncol: 2
+#| fig-cap: 
+#|   - "TTE"
+#|   - "Fick"
+
+hist(
+  data$cardiac_index_TTE,
+  xlab = "Cardiac Index (TTE)",
+  main = NULL
+)
+
+hist(
+  data$cardiac_index_Fick,
+  xlab = "Cardiac Index (Fick)",
+  main = NULL
+)
+```
+
+Thus, bootstrapping is used to calculate the mean with 95% CI: 
+
+```{r}
+# Obtain the mean and 95% CI for the mean
+mean_boot <- function(data, indices) {
+  sample_data <- data[indices]
+  return(mean(sample_data))
+}
+
+# Perform bootstrapping for cardiac_index_TTE
+set.seed(123)  # For reproducibility
+boot_mean_CI_TTE <- boot(data = data$cardiac_index_TTE, statistic = mean_boot, R = 10000 )
+
+# Calculate 95% CI using different methods from boot package
+ci_basic_mean_CI_TTE <- boot.ci(boot_mean_CI_TTE, type = "basic")
+ci_perc_mean_CI_TTE <- boot.ci(boot_mean_CI_TTE, type = "perc")
+ci_bca_mean_CI_TTE <- boot.ci(boot_mean_CI_TTE, type = "bca")
+```
+
+```{r}
+# Perform bootstrapping for cardiac_output_Fick
+set.seed(123)  # For reproducibility
+boot_mean_CI_Fick <- boot(data = data$cardiac_index_Fick, statistic = mean_boot, R = 10000 )
+
+# Calculate 95% CI using different methods from boot package
+ci_basic_mean_CI_Fick <- boot.ci(boot_mean_CI_Fick, type = "basic")
+ci_perc_mean_CI_Fick <- boot.ci(boot_mean_CI_Fick, type = "perc")
+ci_bca_mean_CI_Fick <- boot.ci(boot_mean_CI_Fick, type = "bca")
+```
+
+The mean cardiac index for TTE is `r mean(data$cardiac_index_TTE) %>% round(2)` L/min/m² (95% CI: `r ci_bca_mean_CI_TTE$bca[4] %>% round(2)` to `r ci_bca_mean_CI_TTE$bca[5] %>% round(2)`), and for Fick, `r mean(data$cardiac_index_Fick) %>% round(2)` L/min/m² (95% CI: `r ci_bca_mean_CI_Fick$bca[4] %>% round(2)` to `r ci_bca_mean_CI_Fick$bca[5] %>% round(2)`).
+
+{{< pagebreak >}}
+
+However, the distribution of differences between the two methods is approximately normal. 
+
+```{r}
+# Check for normal distribution of differences between Cardiac Index values (ECOTT - Fick)  
+
+hist(
+  data$cardiac_index_TTE - data$cardiac_index_Fick,
+  xlab = "Difference in Cardiac Index (TTE - Fick)",
+  main = NULL
+)
+```
+
+```{r}
+# Q-Q plot 
+qqnorm(data$cardiac_index_TTE - data$cardiac_index_Fick)
+```
+
+\pagebreak
+
+Assuming a linear and non-linear relationship
+
+```{r}
+ggplot(data, aes(x = cardiac_index_TTE, y = cardiac_index_Fick)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  ylim(1, 9) +
+  xlim(1, 9) +
+  labs(
+    x = "Cardiac Index (ECOTT)",
+    y = "Cardiac Index (Fick)"
+  ) +
+  theme_classic()
+```
+
+```{r}
+ggplot(data, aes(x = cardiac_index_TTE, y = cardiac_index_Fick)) +
+  geom_point() +
+  geom_smooth(method = "loess", color = "red") +
+  ylim(1, 9) +
+  xlim(1, 9) +
+  labs(
+    x = "Cardiac Index (ECOTT)",
+    y = "Cardiac Index (Fick)"
+  ) +
+  theme_classic()
+```
+
+Examine if non-linear term is significantly better than linear term
+
+```{r}
+gam_model <- gam(cardiac_index_Fick ~ s(cardiac_index_TTE), data = data)
+
+summary(gam_model)
+```
+
+```{r}
+plot(gam_model, se = TRUE)
+```
+
+Non-linear relationship is not significantly better than linear relationship. Thus, I will model as linear relationship.
+
+{{< pagebreak >}}
+
+# Pearson correlation
+
+```{r}
+correlation <- cor.test(data$cardiac_index_TTE, data$cardiac_index_Fick, method = "pearson")
+correlation
+```
+
+{{< pagebreak >}}
+
+# Linear regression
+
+```{r}
+# Linear regression
+linear_model <- lm(cardiac_index_TTE ~ cardiac_index_Fick, data = data)
+summary(linear_model)
+```
+
+```{r}
+# Plot residuals to check for patterns
+plot(data$cardiac_index_Fick, residuals(linear_model), main = "Residuals vs Cardiac Index (Fick)", ylab = "Residuals", xlab = "Cardiac Index (Fick)")
+abline(h = 0, col = "red", lty = 2)
+```
+
+{{< pagebreak >}}
+
+# Linear Mixed Effects Model
+
+```{r}
+# Linear mixed effects model
+linear_mixed_model <- lmer(
+  cardiac_index_Fick ~ cardiac_index_TTE + (1 | ID) + (1 | time_point), 
+  data = data
+  )
+
+# 95% Confidence Intervals
+linear_mixed_model_CI <- confint(linear_mixed_model, level = 0.95)
+```
+
+
+```{r}
+summary(linear_mixed_model)
+```
+
+{{< pagebreak >}}
+
+# Intraclass correlation coefficient (ICC)
+
+```{r}
+# Calculate ICC
+icc <- icc(
+  data[, c("cardiac_index_TTE", "cardiac_index_Fick")], 
+  model = "twoway", 
+  type = "agreement", 
+  unit = "average"
+  )
+
+icc
+```
+
+{{< pagebreak >}}
+
+# Coefficient of variation (CV) and coefficient of error (CE)
+
+The following calculation is the coefficient of variation (CV) for the overall averaged measurements, expressed as percentage:
+
+```{r}
+cv_Fick <- sd(data$cardiac_index_Fick) / mean(data$cardiac_index_Fick) * 100
+```
+
+Fick CV: `r cv_Fick %>% round(2)`%
+
+```{r}
+cv_TTE <- sd(data$cardiac_index_TTE) / mean(data$cardiac_index_TTE) * 100
+```
+
+TTE CV: `r cv_TTE %>% round(2)`%
+
+Because there are multiple measurements that are averaged to produce the mean Cardiac Index for TTE, we can calculate the coefficient of error (CE) as suggested by Cecconi, et al.[@cecconi2009] The following calculations reproduce the structure of the table in their review article:
+
+```{r}
+# Calculate the standard deviation across the three measurements for each row
+data$sd_CI_TTE <- apply(data %>% select(CI_TTE_1:CI_TTE_3), 1, sd)
+
+# Calculate the coefficient of variation (CV) for repeated measurements per row
+data$CV_TTE_CI_row <- data$sd_CI_TTE / data$cardiac_index_TTE * 100
+
+# Calculate the coefficient of error
+data$CE_TTE_CI <- data$CV_TTE_CI_row / sqrt(3)
+
+# View the results
+data %>% 
+  select(ID, CI_TTE_1:CI_TTE_3, cardiac_index_TTE, 
+         CV_TTE_CI_row, CE_TTE_CI, cardiac_index_Fick) %>% 
+  head() %>% 
+  mutate(across(-ID, ~round(., 2))) %>% 
+  gt %>% 
+  cols_label(
+    CI_TTE_1 = "CI 1 (TTE), L/min/m²",
+    CI_TTE_2 = "CI 2 (TTE), L/min/m²",
+    CI_TTE_3 = "CI 3 (TTE), L/min/m²",
+    cardiac_index_TTE = "Mean CI TTE, L/min/m²",
+    CV_TTE_CI_row = "CV (%)",
+    CE_TTE_CI = "CE (%)",
+    cardiac_index_Fick = "CI (Fick method), L/min/m²"
+  ) %>% 
+  # Adjust column sizes
+  cols_width(
+    ID ~ pct(10),
+    CI_TTE_1:CI_TTE_3 ~ pct(10),
+    cardiac_index_TTE ~ pct(20),
+    CV_TTE_CI_row ~ pct(10),
+    CE_TTE_CI ~ pct(10),
+    cardiac_index_Fick ~ pct(20)
+  ) %>%
+  tab_footnote(
+    footnote = "CE: Coefficient of Error; CV: Coefficient of Variation; TTE: Transthoracic Echocardiography."
+  )
+
+```
+
+```{r}
+# Obtain the mean and 95% CI for the coefficient of variation (CV) and error (CE)
+
+# Perform bootstrapping for CV_TTE_CI_row
+set.seed(123)  # For reproducibility
+boot_CV <- boot(data = data$CV_TTE_CI_row, statistic = mean_boot, R = 10000 )
+
+# Calculate 95% CI using different methods from boot package
+ci_basic_CV <- boot.ci(boot_CV, type = "basic")
+ci_perc_CV <- boot.ci(boot_CV, type = "perc")
+ci_bca_CV <- boot.ci(boot_CV, type = "bca")
+```
+
+```{r}
+# Perform bootstrapping for CE_TTE_CI
+set.seed(123)  # For reproducibility
+boot_CE <- boot(data = data$CE_TTE_CI, statistic = mean_boot, R = 10000 )
+
+# Calculate 95% CI using different methods from boot package
+ci_basic_CE <- boot.ci(boot_CE, type = "basic")
+ci_perc_CE <- boot.ci(boot_CE, type = "perc")
+ci_bca_CE <- boot.ci(boot_CE, type = "bca")
+```
+
+The mean CV of TTE for the repeated measurements per patient was `r mean(data$CV_TTE_CI_row) %>% round(1)`% (95% CI: `r ci_bca_CV$bca[4] %>% round(1)` to `r ci_bca_CV$bca[5] %>% round(1)`) and the CE was `r mean(data$CE_TTE_CI) %>% round(1)`% (95% CI: `r ci_bca_CE$bca[4] %>% round(1)` to `r ci_bca_CE$bca[5] %>% round(1)`), corresponding to a precision of `r (mean(data$CE_TTE_CI) * 2) %>% round(1)`% (95% CI: `r (ci_bca_CE$bca[4] * 2) %>% round(1)` to `r (ci_bca_CE$bca[5] * 2) %>% round(1)`).
+
+
+{{< pagebreak >}}
+
+# Bland-Altman Plot
+
+#### Bland Altman-single measure
+
+```{r}
+# Calculate the mean and difference
+data$mean_values <- (data$cardiac_index_TTE + data$cardiac_index_Fick) / 2
+data$differences <- data$cardiac_index_TTE - data$cardiac_index_Fick
+
+# Calculate mean and standard deviation of differences
+mean_diff <- mean(data$differences, na.rm = TRUE)
+sd_diff <- sd(data$differences, na.rm = TRUE)
+
+# Plot using ggplot2
+ggplot(data %>% mutate(`TTE Measurement` = "Mean Cardiac Index"),
+       aes(x = mean_values, y = differences, color = `TTE Measurement`)) +
+  geom_point(alpha = 0.5) +                             # Scatter plot of differences
+  geom_hline(yintercept = mean_diff, color = "blue") +  # Mean difference line
+  geom_hline(yintercept = mean_diff + 1.96 * sd_diff, linetype = "dashed", color = "red") +  # Upper limit
+  geom_hline(yintercept = mean_diff - 1.96 * sd_diff, linetype = "dashed", color = "red") +  # Lower limit
+  labs(
+    title = "Bland-Altman Plot",
+    x = "Mean of Cardiac Index (TTE and Fick)",
+    y = "Difference Between Cardiac Index (TTE - Fick)"
+  ) +
+  scale_color_manual(values = c("Mean Cardiac Index" = "grey30")) +
+  scale_x_continuous(limits = c(2, 7), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(-7.5, 5), expand = c(0, 0)) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom"
+  )
+```
+
+##### Systematic bias (Paired t-test)
+
+```{r}
+# Paired t-test
+t.test(data$cardiac_index_TTE, data$cardiac_index_Fick, paired = TRUE)
+```
+
+{{< pagebreak >}}
+
+#### Bland Altman-repeated measures (random effects for between-subject variance)
+
+```{r}
+# Fit the linear mixed model
+model <- lmer(differences ~ 1 + (1 | ID), data = data)
+
+# Extract the fixed effect (mean difference) and random effects (within-subject variability)
+mean_diff <- fixef(model)[1]  # Mean difference
+sd_diff <- sqrt(VarCorr(model)$ID[1] + sigma(model)^2)  # Total variability (within-subject + residual)
+
+upper_limit <- mean_diff + 1.96 * sd_diff
+lower_limit <- mean_diff - 1.96 * sd_diff
+```
+
+```{r}
+summary(model)
+```
+
+```{r}
+# Create the Bland-Altman plot
+fig2A <- ggplot(data %>% mutate(`TTE Measurement` = "Mean Cardiac Index"),
+       aes(x = mean_values, y = differences, color = `TTE Measurement`)) +
+  geom_point(alpha = 0.6) +
+  geom_hline(yintercept = mean_diff, color = "blue", size = 1) +
+  geom_hline(yintercept = upper_limit, color = "red", linetype = "dashed") +
+  geom_hline(yintercept = lower_limit, color = "red", linetype = "dashed") +
+  labs(
+    title = "Bland-Altman Plot (between-subject variance)",
+    x = "Mean of Cardiac Index (TTE and Fick)",
+    y = "Difference Between Cardiac Index (TTE - Fick)",
+    tag = "A"
+  ) +
+  scale_color_manual(values = c("Mean Cardiac Index" = "grey30")) +
+  scale_x_continuous(limits = c(2, 7), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(-7.5, 5), expand = c(0, 0)) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom"
+  )
+
+fig2A
+```
+
+```{r}
+#| eval: false
+fig2A <- ggplot(data %>% mutate(`Medición ECOTT` = "Promedio de IC"),
+       aes(x = mean_values, y = differences, color = `Medición ECOTT`)) +
+  geom_point(alpha = 0.6) +
+  geom_hline(yintercept = mean_diff, color = "blue", size = 1) +
+  geom_hline(yintercept = upper_limit, color = "red", linetype = "dashed") +
+  geom_hline(yintercept = lower_limit, color = "red", linetype = "dashed") +
+  labs(
+    title = "Gráfico de Bland-Altman (varianza entre sujetos)",
+    x = "Promedio del Índice Cardíaco (ECOTT y Fick)",
+    y = "Diferencia entre el Índice Cardíaco (ECOTT - Fick)",
+    tag = "A"
+  ) +
+  scale_color_manual(values = c("Promedio de IC" = "grey30")) +
+  scale_x_continuous(limits = c(2, 7), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(-7.5, 5), expand = c(0, 0)) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom"
+  )
+
+fig2A
+```
+
+{{< pagebreak >}}
+
+#### Bland Altman-repeated measures (random effects for between-subject variance and within-subject variance)
+
+```{r}
+data_long <- data %>%
+  pivot_longer(
+    cols = starts_with("CI_TTE_"),  # Select the columns CI_TTE_1, CI_TTE_2, CI_TTE_3
+    names_to = "TTE_measurement",
+    values_to = "CI_TTE_individual"
+  ) %>% 
+  mutate(TTE_measurement = factor(
+    str_extract(TTE_measurement, "\\d+"),
+    levels = c("1", "2", "3")
+    ))
+
+# Calculate mean values and differences for each row
+data_long <- data_long %>%
+  mutate(
+    mean_values = (CI_TTE_individual + cardiac_index_Fick) / 2,
+    differences = CI_TTE_individual - cardiac_index_Fick
+  )
+```
+
+```{r}
+# Fit the linear mixed model with nested structure
+model_long <- lmer(
+  differences ~ 1 + (1 | ID) + (1 | ID:time_point) + (1 | TTE_measurement),
+  data = data_long
+)
+
+# Extract mean difference (fixed effect)
+mean_diff_long <- fixef(model_long)[1]  # Mean difference (fixed effect)
+
+# Extract variance components
+variance_components <- as.data.frame(VarCorr(model_long))
+var_id <- variance_components[variance_components$grp == "ID", "vcov"]  # Variance between participants
+var_time_point <- variance_components[variance_components$grp == "ID:time_point", "vcov"]  # Variance between time points within participants
+var_measurement <- variance_components[variance_components$grp == "TTE_measurement", "vcov"]  # Variance between measurements
+residual_variance <- sigma(model_long)^2  # Residual variance (measurement error)
+
+# Compute total variability (sum of all variance components)
+total_variance <- var_id + var_time_point + var_measurement + residual_variance
+
+# Compute standard deviation of differences
+sd_diff_long <- sqrt(total_variance)
+
+# Compute 95% limits of agreement
+upper_limit_long <- mean_diff_long + 1.96 * sd_diff_long
+lower_limit_long <- mean_diff_long - 1.96 * sd_diff_long
+
+# Test for systematic bias (null hypothesis: mean difference = 0)
+se_mean_diff_long <- sqrt(diag(vcov(model_long)))[1]  # Standard error of the fixed effect
+z_statistic <- mean_diff_long / se_mean_diff_long
+p_value <- 2 * (1 - pnorm(abs(z_statistic)))  # Two-tailed p-value
+```
+
+```{r}
+summary(model_long)
+```
+
+There was singularity in the prior model including a random effect for within-subject TTE measurements. Because this term is conceptually important to take into account the nested structure of the data, we will keep it in the model. Other alternatives would be to include it as a fixed effect, but this would not necessarily represent a meaningful variable to model. 
+
+```{r}
+# Bland-Altman plot for individual measurements
+fig2B <- ggplot(data_long, aes(x = mean_values, y = differences, color = TTE_measurement)) +
+  geom_point(alpha = 0.6) +
+  geom_hline(yintercept = mean_diff_long, color = "blue", size = 1) +
+  geom_hline(yintercept = upper_limit_long, color = "red", linetype = "dashed") +
+  geom_hline(yintercept = lower_limit_long, color = "red", linetype = "dashed") +
+  labs(
+    title = "Bland-Altman Plot (between and within-subject variance)",
+    x = "Mean of Cardiac Index (TTE and Fick)",
+    y = "Difference Between Cardiac Index (TTE - Fick)",
+    color = "TTE Measurement",
+    tag = "B"
+  ) +
+  scale_x_continuous(limits = c(2, 7), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(-7.5, 5.1), expand = c(0, 0)) +
+  scale_color_manual(
+    values = c("1" = "royalblue", "2" = "green4", "3" = "orange2"),  # Set colors for the levels
+  ) +
+  theme_minimal() +   
+  theme(
+    legend.position = "bottom"
+  )
+
+fig2B
+```
+
+```{r}
+#| eval: false
+# Bland-Altman para medidas individuales
+fig2B <- ggplot(data_long, aes(x = mean_values, y = differences, color = TTE_measurement)) +
+  geom_point(alpha = 0.6) +
+  geom_hline(yintercept = mean_diff_long, color = "blue", size = 1) +
+  geom_hline(yintercept = upper_limit_long, color = "red", linetype = "dashed") +
+  geom_hline(yintercept = lower_limit_long, color = "red", linetype = "dashed") +
+  labs(
+    title = "Gráfico de Bland-Altman (varianza entre sujetos y fija dentro del sujeto)",
+    x = "Promedio del Índice Cardíaco (ECOTT y Fick)",
+    y = "Diferencia entre el Índice Cardíaco (ECOTT - Fick)",
+    color = "Medición ECOTT",
+    tag = "B"
+  ) +
+  scale_x_continuous(limits = c(2, 7), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(-7.5, 5.1), expand = c(0, 0)) +
+  scale_color_manual(
+    values = c("1" = "royalblue", "2" = "green4", "3" = "orange2"),  # Set colors for the levels
+  ) +
+  theme_minimal() +   
+  theme(
+    legend.position = "bottom"
+  )
+```
+
+{{< pagebreak >}}
+
+# Mean absolute difference (MAD)
+
+```{r}
+# Mean Absolute Difference
+MAD <- mean(abs(data$cardiac_index_TTE - data$cardiac_index_Fick))
+
+# Add 95% confidence interval
+MAD_interval <- MAD + c(-1, 1) * 1.96 * sd(data$cardiac_index_TTE - data$cardiac_index_Fick) / sqrt(nrow(data))
+```
+
+The MAD for Cardiac Index is `r MAD %>% round(1)` (95% CI: `r MAD_interval[1] %>% round(1)` to `r MAD_interval[2] %>% round(1)`).
+
+# Mean absolute percentage error (MAPE) and precision of Fick method
+
+```{r}
+mape_point <- mean(abs((data$cardiac_index_TTE - data$cardiac_index_Fick) / 
+                      data$cardiac_index_TTE)) * 100
+
+# Bootstrap with boot package 
+mape_boot <- function(data, indices) {
+  sample_data <- data[indices, ]
+  mape <- mean(abs((sample_data$cardiac_index_TTE - sample_data$cardiac_index_Fick) / 
+                   sample_data$cardiac_index_TTE)) * 100
+  return(mape)
+}
+
+# Perform bootstrap with boot package
+set.seed(123)
+boot_results <- boot(data = data, 
+                    statistic = mape_boot, 
+                    R = 10000)
+
+# Calculate 95% CI using different methods from boot package
+ci_basic <- boot.ci(boot_results, type = "basic")
+ci_perc <- boot.ci(boot_results, type = "perc")
+ci_bca <- boot.ci(boot_results, type = "bca")
+```
+
+```{r}
+# Extract precisiona and 95% CI
+precisiona <- mean(data$CE_TTE_CI) * 2 # Point estimate
+precisiona_lower <- ci_bca_CE$bca[4] * 2 # Lower bound
+precisiona_upper <- ci_bca_CE$bca[5] * 2 # Upper bound
+
+# Extract PEa-b and its 95% CI from the global environment
+PEa_b <- mape_point # Point estimate
+PEa_b_lower <- ci_bca$bca[4] # Lower bound
+PEa_b_upper <- ci_bca$bca[5] # Upper bound
+
+# Function to calculate precisionb
+calculate_precisionb <- function(PEa_b, precisiona) {
+  sqrt((PEa_b)^2 - (precisiona)^2)
+}
+
+# Calculate precisionb (point estimate)
+precisionb <- calculate_precisionb(PEa_b, precisiona)
+
+# Sensitivity analysis: lower and upper bounds
+precisionb_lower <- calculate_precisionb(PEa_b_lower, precisiona_upper)
+precisionb_upper <- calculate_precisionb(PEa_b_upper, precisiona_lower)
+
+# Print results
+cat("Precisionb (point estimate):", round(precisionb, 2), "%\n")
+cat("Precisionb (95% CI):", round(precisionb_lower, 2), "-", round(precisionb_upper, 2), "%\n")
+
+```
+
+
+{{< pagebreak >}}
+
+# Summary
+
+The mean cardiac index with the TTE method was `r mean(data$cardiac_index_TTE) %>% round(2)` L/min/m² (95% CI: `r ci_bca_mean_CI_TTE$bca[4] %>% round(2)` to `r ci_bca_mean_CI_TTE$bca[5] %>% round(2)`) and `r mean(data$cardiac_index_Fick) %>% round(2)` L/min/m² (95% CI: `r ci_bca_mean_CI_Fick$bca[4] %>% round(2)` to `r ci_bca_mean_CI_Fick$bca[5] %>% round(2)`) with the Fick method. The correlation between the two methods was rho = `r correlation$estimate %>% round(2)` (95% CI: `r correlation$conf.int[1] %>% round(2)` to `r correlation$conf.int[2] %>% round(2)`, p=`r correlation$p.value %>% round(3)`). In a linear mixed model with random patient slopes, there was a change in Fick CI of `r linear_mixed_model@beta[2] %>% round(2)` (95% CI: `r linear_mixed_model_CI["cardiac_index_TTE",1] %>% round(2)` to `r linear_mixed_model_CI["cardiac_index_TTE",2] %>% round(2)`) L/min/m² for each unit change in mean TTE CI. The ICC between TCE and Fick CI `r icc$value %>% round(2)` (95% CI: `r icc$lbound %>% round(2)` to `r icc$ubound %>% round(2)`). 
+
+The mean absolute difference in CI between TTE and Fick was `r MAD %>% round(2)` (95% CI: `r MAD_interval[1] %>% round(1)` to `r MAD_interval[2] %>% round(1)`) L/min/m². The coefficient of variation for an individual measurement of TTE was `r cv_TTE %>% round(1)`% and `r cv_Fick %>% round(2)`% for Fick. The mean CV of TTE for the repeated measurements per patient was `r mean(data$CV_TTE_CI_row) %>% round(1)`% (95% CI: `r ci_bca_CV$bca[4] %>% round(1)` to `r ci_bca_CV$bca[5] %>% round(1)`) and the CE was `r mean(data$CE_TTE_CI) %>% round(1)`% (95% CI: `r ci_bca_CE$bca[4] %>% round(1)` to `r ci_bca_CE$bca[5] %>% round(1)`), corresponding to a precision of `r precisiona %>% round(1)`% (95% CI: `r precisiona_lower %>% round(1)` to `r precisiona_upper %>% round(1)`). The MAPE of the Fick method compared to TTE was `r mape_point %>% round(1)`% (95% CI: `r ci_bca$bca[4] %>% round(1)` - `r ci_bca$bca[5] %>% round(1)`). The precision of the Fick method was `r precisionb %>% round(2)`% (95% CI: `r precisionb_lower %>% round(2)` to `r precisionb_upper %>% round(2)`). The LSC was `r (precisiona * sqrt(2)) %>% round(1)`% (95% CI: `r (precisiona_lower * sqrt(2)) %>% round(1)` to `r (precisiona_upper * sqrt(2)) %>% round(1)`) for TTE and `r (precisionb * sqrt(2)) %>% round(1)`% (95% CI: `r (precisionb_lower * sqrt(2)) %>% round(1)` to `r (precisionb_upper * sqrt(2)) %>% round(1)`) for the Fick method.
+
+**Figure 2** shows the Bland-Altman plot for the repeated measures model with random effects for between-subject variance (Figure2A) and within-subject variance (Figure2B). The mean difference (systematic bias) between TTE and Fick CI was `r mean_diff_long %>% round(2)` (95% CI: `r (mean_diff_long - 1.96 * se_mean_diff_long) %>% round(2)` to `r (mean_diff_long + 1.96 * se_mean_diff_long) %>% round(2)`, p = `r p_value %>% round(3)`) L/min/m², with 95% limits of agreement of `r lower_limit_long %>% round(2)` to `r upper_limit_long %>% round(2)` L/min/m². 
+
+```{r}
+ggsave(
+  filename = file.path(figfolder, "Figure2.png"),
+  plot = arrangeGrob(fig2A, fig2B, nrow = 2),
+  width = 7, height = 10, dpi = 600, bg = "white"
+)
+```
+
+
+{{< pagebreak >}}
+
+# References
+
+::: {#refs}
+:::
+
+{{< pagebreak >}}
+
+# Package References
+
+```{r}
+#| output: asis 
+report::cite_packages(session)
+```
+
+```{r}
+#| include: false
+
+# Run this chunk if you wish to clear your environment and unload packages.
+
+pacman::p_unload(negate = TRUE)
+
+rm(list = ls())
+```

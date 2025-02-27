@@ -1,0 +1,192 @@
+---
+title: "Gasto cardíaco por ECOTT vs Fick"
+subtitle: "Parte 1: Descriptivos"
+author: 
+  - "J. Mancilla Galindo, E. Garza Santiago, L.A. Fernández Urrutia"
+  - "A. Kammar-García"
+date: today
+execute: 
+  echo: false
+  warning: false
+format:
+  pdf: 
+    toc: false
+    documentclass: scrartcl
+  docx: 
+    reference-doc: ../docs/custom-reference-doc.docx
+editor: source
+---
+
+```{r}
+#| include: false  
+
+# Create directories for sub-folders  
+inputfolder <- "../data/raw"
+psfolder <- "../data/processed"
+tempfolder <- "../data/temp"
+figfolder <- "../results/output_figures"
+tabfolder <- "../results/output_tables"
+
+dir.create(inputfolder, showWarnings = FALSE)
+dir.create(psfolder, showWarnings = FALSE)
+dir.create(tempfolder, showWarnings = FALSE)
+dir.create(figfolder, showWarnings = FALSE)
+dir.create(tabfolder, showWarnings = FALSE)
+```
+
+```{r}
+#| echo: false 
+
+if (!require("pacman", quietly = TRUE)) {
+  install.packages("pacman")
+}
+
+pacman::p_load(
+  tidyverse,  # Used for basic data handling and visualization.
+  dataverse,  # Retrieve dataset from the Harvard dataverse.
+  knitr,      # Used to save markdown tables.
+  gtsummary,  # Used to create summary tables.
+  gt,         # Used to print html tables.  
+  report      # Used to cite packages used in this session.   
+)
+```
+
+```{r}
+#| echo: false  
+
+## Session and package dependencies
+
+# remove clutter
+session <- sessionInfo()
+session$BLAS <- NULL
+session$LAPACK <- NULL
+session$loadedOnly <- NULL
+# write log file
+writeLines(
+  capture.output(print(session, locale = FALSE)),
+  paste0("sessions/",lubridate::today(), "_session_Part_1.txt")
+)                                   # Change name to match your new .qmd file.
+```
+
+```{r}
+# Load dataset from the dataverse
+data_path <- get_file_by_name(
+  filename = "cardiac_output_Fick_vs_ECOTT.RData",
+  dataset = "10.7910/DVN/J4ONSU", 
+  server = "dataverse.harvard.edu")
+
+local_file <- paste0(tempfolder,"/cardiac_output_Fick_vs_ECOTT.RData")
+
+writeBin(data_path, local_file)
+
+load(local_file)
+```
+
+# Descriptive characteristics of participants
+
+```{r}
+# Number of unique IDs 
+number_participants <- data %>% 
+  summarize(n = n_distinct(ID)) %>% 
+  pull()
+
+# Number of measurements per ID 
+number_measurements <- data %>% 
+  group_by(ID) %>% 
+  summarize(Measurements = n()) %>% 
+  count(Measurements)
+
+measurements_string <- paste(
+    apply(number_measurements, 1, function(x) {
+      paste0(x["Measurements"], " (n = ", x["n"], ")")
+    }),
+    collapse = ", "
+  )
+```
+
+
+```{r}
+# Group by ID, then check which columns have unique values for each ID
+columns_summarize <- data %>%
+  group_by(ID) %>%
+  summarise_all(n_distinct) %>% 
+  mutate_all(as.factor) %>%
+  summarize(n = n(), across(everything(), ~ sum(. == 1))) %>%
+  select(-c(n, ID)) %>% 
+  ungroup() %>% 
+  gather(key = "variable", value = "value") 
+
+# Keep only those equal to ID length and keep variable names only
+columns_summarize <- columns_summarize %>% 
+  filter(value == number_participants) %>%
+  pull(variable)
+
+# Append "ID" as the first element in the vector
+columns_summarize <- c("ID", columns_summarize)
+```
+
+```{r}
+# Save data.frame with unique columns 
+data_unique <- data %>% 
+  select(all_of(columns_summarize)) %>% group_by(ID) %>% slice(1) %>% ungroup()
+```
+
+A total of `r nrow(data) * 3` TTE cardiac output measurements were performed in `r nrow(data)` different time points, from a total number of `r nrow(data_unique)` unique participants. The number of time points assessed per patient was `r measurements_string`. The summary of characteristics of participants is shown in **Table 1**. 
+
+```{r}
+source("scripts/table1.R")
+```
+
+```{r}
+#| output: asis
+cat(readLines("../results/output_tables/table1.md"), sep = "\n")
+```
+
+# Patient status at the moment of measurement
+
+```{r}
+ventilation_mode_summary <- data %>% 
+  mutate(ventilation_mode = fct_relevel(ventilation_mode, "Without MV", "MR",
+                                        "HFNC", "Spontaneous", "CPAP|PS", "ACV")
+         ) %>% 
+  group_by(ventilation_mode) %>%
+  summarize(n = n()) %>% 
+  mutate(percentage = round((n / sum(n) * 100),1)) 
+
+ventilation_mode_string <- paste(
+    apply(ventilation_mode_summary, 1, function(x) {
+      paste0(x["ventilation_mode"], " (n = ", x["n"], ", ", x["percentage"], "%)")
+    }),
+    collapse = ", "
+  )
+```
+
+Out of the total number of measurements, `r sum(data$vasopressor_use == "yes")` (`r round(sum(data$vasopressor_use == "yes") / nrow(data) * 100, 1)`%) measurements were taken while the patient was under vasopressor use. The number of measurements taken while the patient was under inotropic use was `r sum(data$inotropics_use == "yes")` (`r round(sum(data$inotropics_use == "yes") / nrow(data) * 100, 1)`%). The mean blood pressure was `r round(mean(data$mean_blood_pressure, na.rm = T), 1)` (SD: `r round(sd(data$mean_blood_pressure, na.rm = T), 1)`) mmHg; and heart rate, `r round(mean(data$heart_rate, na.rm = T), 1)` (SD: `r round(sd(data$heart_rate, na.rm = T), 1)`) bpm; and median FiO2, `r median(data$FiO2, na.rm = T)` (IQR: `r quantile(data$FiO2, na.rm = T, 0.25)` -  `r quantile(data$FiO2, na.rm = T, 0.75)`). A summary of the blood gas analysis is shown in **Table 2**.
+
+```{r}
+source("scripts/table2.R")
+
+summary_table
+```
+
+
+The ventilation mode at the moment of measurement was `r ventilation_mode_string`. Of the participants who were under IMV (CPAP|PS or ACV), the median PEEP value was `r median(data$PEEP[data$ventilation_mode %in% c("CPAP|PS", "ACV")], na.rm = T)` (IQR: `r quantile(data$PEEP[data$ventilation_mode %in% c("CPAP|PS", "ACV")], na.rm = T, 0.25)` -  `r quantile(data$PEEP[data$ventilation_mode %in% c("CPAP|PS", "ACV")], na.rm = T, 0.75)`) cmH2O; FiO2, `r median(data$FiO2[data$ventilation_mode %in% c("CPAP|PS", "ACV")], na.rm = T)` (IQR: `r quantile(data$FiO2[data$ventilation_mode %in% c("CPAP|PS", "ACV")], na.rm = T, 0.25)` -  `r quantile(data$FiO2[data$ventilation_mode %in% c("CPAP|PS", "ACV")], na.rm = T, 0.75)`); Pmax, `r median(data$Pmax[data$ventilation_mode %in% c("CPAP|PS", "ACV")], na.rm = T)` (IQR: `r quantile(data$Pmax[data$ventilation_mode %in% c("CPAP|PS", "ACV")], na.rm = T, 0.25)` -  `r quantile(data$Pmax[data$ventilation_mode %in% c("CPAP|PS", "ACV")], na.rm = T, 0.75)`); and mean Vt `r round(mean(data$Vt[data$ventilation_mode %in% c("CPAP|PS", "ACV")], na.rm = T), 1)` (SD: `r round(sd(data$Vt[data$ventilation_mode %in% c("CPAP|PS", "ACV")], na.rm = T), 1)`). In those with the ACV mode, the median Pmes and DP were `r median(data$Pmes[data$ventilation_mode == "ACV"], na.rm = T)` (IQR: `r quantile(data$Pmes[data$ventilation_mode == "ACV"], na.rm = T, 0.25)` -  `r quantile(data$Pmes[data$ventilation_mode == "ACV"], na.rm = T, 0.75)`) and `r median(data$DP[data$ventilation_mode == "ACV"], na.rm = T)` (IQR: `r quantile(data$DP[data$ventilation_mode == "ACV"], na.rm = T, 0.25)` -  `r quantile(data$DP[data$ventilation_mode == "ACV"], na.rm = T, 0.75)`) cmH2O, respectively.
+
+{{< pagebreak >}}
+
+# Package References
+
+```{r}
+#| output: asis 
+report::cite_packages(session)
+```
+
+```{r}
+#| include: false
+
+# Run this chunk if you wish to clear your environment and unload packages.
+
+pacman::p_unload(negate = TRUE)
+
+rm(list = ls())
+```
