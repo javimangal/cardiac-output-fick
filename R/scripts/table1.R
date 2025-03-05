@@ -7,7 +7,7 @@ age <- data_unique %>%
   ) %>%
   mutate(Summary = paste0(Mean, " (", SD, ")")) %>% 
   select(Variable, Summary)
-
+10/52
 # Summary of sex 
 sex <- data_unique %>% 
   group_by(sex) %>%
@@ -36,7 +36,7 @@ BMI_categories <- data_unique %>%
   group_by(obesity) %>%
   summarize(n = n()) %>%
   mutate(
-    percentage = round((n / sum(n) * 100),1),
+    percentage = round((n / number_participants * 100),1),
     Summary = paste0(n, " (", percentage, "%)"),
     Variable = obesity
   ) %>%
@@ -49,7 +49,7 @@ comorbidities <- data_unique %>%
   arrange(desc(is.na(comorbidities)), desc(n)) %>%
   mutate(comorbidities = ifelse(is.na(comorbidities), "No comorbidities", comorbidities)) %>%
   mutate(
-    percentage = round((n / sum(n) * 100),1),
+    percentage = round((n / number_participants * 100),1),
     Summary = paste0(n, " (", percentage, "%)"),
     Variable = comorbidities
   ) %>%
@@ -61,7 +61,7 @@ diagnosis <- data_unique %>%
   count(diagnosis) %>% 
   arrange(desc(is.na(diagnosis)), desc(n))  %>%
   mutate(
-    percentage = round((n / sum(n) * 100),1),
+    percentage = round((n / number_participants * 100),1),
     Summary = paste0(n, " (", percentage, "%)"),
     Variable = diagnosis
   ) %>%

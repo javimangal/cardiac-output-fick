@@ -12,7 +12,7 @@ format:
     toc: false
     documentclass: scrartcl
   docx: 
-    reference-doc: ../docs/custom-reference-doc.docx
+    reference-doc: ../docs/manuscript/custom-reference-doc.docx
 editor: source
 ---
 
