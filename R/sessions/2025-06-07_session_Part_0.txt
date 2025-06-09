@@ -1,0 +1,16 @@
+R version 4.5.0 (2025-04-11 ucrt)
+Platform: x86_64-w64-mingw32/x64
+Running under: Windows 11 x64 (build 26100)
+
+Matrix products: default
+  LAPACK version 3.12.1
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+ [1] report_0.6.1     styler_1.10.3    haven_2.5.4      ggrepel_0.9.6   
+ [5] gt_1.0.0         readxl_1.4.5     overviewR_0.0.13 lubridate_1.9.4 
+ [9] forcats_1.0.0    stringr_1.5.1    dplyr_1.1.4      purrr_1.0.4     
+[13] readr_2.1.5      tidyr_1.3.1      tibble_3.2.1     ggplot2_3.5.2   
+[17] tidyverse_2.0.0  pacman_0.5.1    

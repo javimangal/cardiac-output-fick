@@ -12,7 +12,7 @@ format:
     toc: false
     documentclass: scrartcl
   docx: 
-    reference-doc: ../docs/manuscript/custom-reference-doc.docx
+    reference-doc: custom-reference-doc.docx
 editor: source
 ---
 
@@ -91,7 +91,7 @@ excel_sheets(file.path(inputfolder,"GC X FICK vs ECOTT.xlsm"))
 raw_data <- read_excel(
   file.path(inputfolder,"GC X FICK vs ECOTT.xlsm"),
   sheet = "Sheet1",
-  range = "A6:AZ91",
+  range = "A6:BA91",
   na = "NA"
   )
 
@@ -188,7 +188,7 @@ data %>%
 ```{r}
 ventilation_variables <- colnames(data[46:51])
 
-overview_na(data %>% select(ventilation_variables))
+overview_na(data %>% select(all_of(ventilation_variables)))
 ```
 
 Missing data likely corresponding to participants without mechanical ventilation. I will filter and check.
@@ -207,28 +207,28 @@ Missing data likely corresponding to participants without mechanical ventilation
 
 overview_na(
   data %>% 
-    select(ventilation_variables) %>%  
+    select(all_of(ventilation_variables)) %>%  
     filter(ventilation_mode %in% c('MR','Without MV','Spontaneous')) %>% 
     select(-ventilation_mode)
 )
 
 overview_na(
   data %>% 
-    select(ventilation_variables) %>%  
+    select(all_of(ventilation_variables)) %>%  
     filter(ventilation_mode == 'HFNC')%>% 
     select(-ventilation_mode)
 )
 
 overview_na(
   data %>% 
-    select(ventilation_variables) %>%  
+    select(all_of(ventilation_variables)) %>%  
     filter(ventilation_mode == 'CPAP|PS')%>% 
     select(-ventilation_mode)
 )
 
 overview_na(
   data %>% 
-    select(ventilation_variables) %>%  
+    select(all_of(ventilation_variables)) %>%  
     filter(ventilation_mode == 'ACV')%>% 
     select(-ventilation_mode)
 )
@@ -342,6 +342,7 @@ Recalculation of body surface area to corroborate values in data:
 BSA = \sqrt{\frac{height \times weight}{3600}}
 \end{align*}
 ```
+
 ```{r}
 data <- data %>% 
   mutate(
@@ -669,25 +670,19 @@ data <- data %>%
     CO_TTE_1 = CO_1_recalculated,
     CO_TTE_2 = CO_2_recalculated,
     CO_TTE_3 = CO_3_recalculated,
-    cardiac_output_TTE = CO_recalculated,
-    cardiac_index_TTE = CO_recalculated / body_surface_area,
     CI_TTE_1 = CO_1_recalculated / body_surface_area,
     CI_TTE_2 = CO_2_recalculated / body_surface_area,
-    CI_TTE_3 = CO_3_recalculated / body_surface_area
+    CI_TTE_3 = CO_3_recalculated / body_surface_area,
+    cardiac_output_TTE = CO_recalculated,
+    cardiac_index_TTE = CO_recalculated / body_surface_area
   ) %>% 
+  relocate(c(CI_TTE_1, CI_TTE_2, CI_TTE_3), .before = cardiac_index_TTE) %>% 
   select(-contains("recalculated"))
 ```
 
 Check if recalculated CI values is within the range indicated in dictionary.
 
 ```{r}
-# Load updated variable dictionary with recalculated variables 
-dictionary <- read_excel(
-  file.path(inputfolder,"Variable dictionary final.xlsx"),
-  range = cell_cols("A:I"),
-  na = "."
-  )
-
 dictionary %>% 
   filter(Variable == "cardiac_index_TTE") %>% 
   select(1:5) %>% gt
@@ -857,6 +852,7 @@ The Oxygen extraction (ExO2) is calculated as:
 ExO_2 = \frac{(SaO_2 - SvO_2)}{SaO_2}
 \end{align*}
 ```
+
 ```{r}
 data <- data %>% 
   mutate(
@@ -1014,6 +1010,7 @@ data %>%
   gt
 ```
 
+
 \pagebreak
 
 # Save data
@@ -1025,12 +1022,18 @@ The following sourced script assigns random values of ID for each participant. T
 source("scripts/random_ID_generator.R")
 ```
 
-Save as csv file.
+Save as tabular data.
 
 ```{r}
 #| echo: true
-
-write_csv(data, file.path(psfolder,"cardiac_output_Fick_vs_ECOTT.csv"))
+write.table(
+  data,
+  file = file.path(psfolder, "cardiac_output_Fick_vs_ECOTT.tab"),
+  sep = "\t",         
+  quote = FALSE,      
+  row.names = FALSE,  
+  na = ""             
+)
 ```
 
 Save as R data file.

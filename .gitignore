@@ -47,6 +47,9 @@ vignettes/*.pdf
 # Random ID generation script
 R/scripts/random_ID_generator.R
 
+# Posthoc analyses 
+R/*posthoc*
+
 # Manuscript and related documentation
 docs/
 

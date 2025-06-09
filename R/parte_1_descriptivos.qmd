@@ -161,7 +161,36 @@ ventilation_mode_string <- paste(
   )
 ```
 
-Out of the total number of measurements, `r sum(data$vasopressor_use == "yes")` (`r round(sum(data$vasopressor_use == "yes") / nrow(data) * 100, 1)`%) measurements were taken while the patient was under vasopressor use. The number of measurements taken while the patient was under inotropic use was `r sum(data$inotropics_use == "yes")` (`r round(sum(data$inotropics_use == "yes") / nrow(data) * 100, 1)`%). The mean blood pressure was `r round(mean(data$mean_blood_pressure, na.rm = T), 1)` (SD: `r round(sd(data$mean_blood_pressure, na.rm = T), 1)`) mmHg; and heart rate, `r round(mean(data$heart_rate, na.rm = T), 1)` (SD: `r round(sd(data$heart_rate, na.rm = T), 1)`) bpm; and median FiO2, `r median(data$FiO2, na.rm = T)` (IQR: `r quantile(data$FiO2, na.rm = T, 0.25)` -  `r quantile(data$FiO2, na.rm = T, 0.75)`). A summary of the blood gas analysis is shown in **Table 2**.
+```{r}
+ids <- data %>% group_by(ID) %>% 
+  summarize(
+    n = n(),
+    time_points = n_distinct(time_point)
+  ) %>% 
+  filter(n >1)
+
+interventions <- data %>% 
+  filter(ID %in% ids$ID) 
+
+interventions_vasopressor <- interventions %>% 
+  distinct(ID, vasopressor_use) %>% 
+  group_by(ID) %>% 
+  summarize(
+    n = n()
+  )  %>% 
+  filter(n >1)
+  
+interventions_inotropics <- interventions %>% 
+  distinct(ID, inotropics_use) %>% 
+  group_by(ID) %>% 
+  summarize(
+    n = n()
+  )  %>% 
+  filter(n >1)
+```
+
+
+Out of the total number of measurements, `r sum(data$vasopressor_use == "yes")` (`r round(sum(data$vasopressor_use == "yes") / nrow(data) * 100, 1)`%) measurements were taken while the patient was under vasopressor use. The number of measurements taken while the patient was under inotropics use was `r sum(data$inotropics_use == "yes")` (`r round(sum(data$inotropics_use == "yes") / nrow(data) * 100, 1)`%). A total of `r count(interventions_vasopressor)` and `r count(interventions_inotropics)` participants underwent changes in vasopressor and inotropics use in between measuring time points, respectively. The mean blood pressure was `r round(mean(data$mean_blood_pressure, na.rm = T), 1)` (SD: `r round(sd(data$mean_blood_pressure, na.rm = T), 1)`) mmHg; and heart rate, `r round(mean(data$heart_rate, na.rm = T), 1)` (SD: `r round(sd(data$heart_rate, na.rm = T), 1)`) bpm; and median FiO2, `r median(data$FiO2, na.rm = T)` (IQR: `r quantile(data$FiO2, na.rm = T, 0.25)` -  `r quantile(data$FiO2, na.rm = T, 0.75)`). A summary of the blood gas analysis is shown in **Table 2**.
 
 ```{r}
 source("scripts/table2.R")

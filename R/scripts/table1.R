@@ -45,10 +45,18 @@ BMI_categories <- data_unique %>%
 # Summary of comorbidities
 comorbidities <- data_unique %>% 
   separate_rows(comorbidities, sep = " \\| ") %>% 
+  mutate(
+    comorbidities = case_when(
+      comorbidities == "Overweight" ~ "Overweight/obesity",
+      comorbidities == "Obesity" ~ "Overweight/obesity",
+      comorbidities == "Status epilepticus" ~ "Epilepsy",
+      TRUE ~ comorbidities
+    )
+  ) %>% 
   count(comorbidities) %>% 
   arrange(desc(is.na(comorbidities)), desc(n)) %>%
-  mutate(comorbidities = ifelse(is.na(comorbidities), "No comorbidities", comorbidities)) %>%
   mutate(
+    comorbidities = ifelse(is.na(comorbidities), "No comorbidities", comorbidities),
     percentage = round((n / number_participants * 100),1),
     Summary = paste0(n, " (", percentage, "%)"),
     Variable = comorbidities
@@ -56,8 +64,32 @@ comorbidities <- data_unique %>%
   select(Variable, Summary)
 
 # Summary of diagnosis
+infectious_diagnosis <- c(
+  "Sepsis", "COVID-19", "Community-acquired pneumonia", "Endocarditis",
+  "Ventilation-associated pneumonia", "Urinary tract infection", "Influenza",
+  "Hospital-acquired pneumonia", "Peritonitis", "Pyelonephritis", 
+  "Soft-tissue infection", "Tuberculous meningitis"
+)
+
+trauma_diagnosis <- c("Traumatic brain injury", "Polytrauma", "Postsurgical", 
+                      "Abdominal trauma", "Burns", "Strangulation")
+
+cardiovascular_diagnosis <- c("Cardiac arrest", "Acute myocardial infarction",
+                              "Hypertensive emergency", "Pulmonary thromboembolism")
+
+pattern_sepsis <- paste0(str_replace_all(infectious_diagnosis, fixed("|"), "\\|"), collapse = "|")
+pattern_trauma <- paste0(str_replace_all(trauma_diagnosis, fixed("|"), "\\|"), collapse = "|")
+pattern_cardiovascular <- paste0(str_replace_all(cardiovascular_diagnosis, fixed("|"), "\\|"), collapse = "|")
+
 diagnosis <- data_unique %>% 
-  separate_rows(diagnosis, sep = " \\| ") %>% 
+  mutate(
+    diagnosis = str_replace_all(diagnosis, pattern_sepsis, "Sepsis"),
+    diagnosis = str_replace_all(diagnosis, pattern_trauma, "Trauma/Surgical"),
+    diagnosis = str_replace_all(diagnosis, pattern_cardiovascular, "Cardiovascular")
+  ) %>%
+  separate_rows(diagnosis, sep = " \\| ") %>%
+  distinct(ID, diagnosis) %>% 
+  filter(diagnosis != "Shock") %>% 
   count(diagnosis) %>% 
   arrange(desc(is.na(diagnosis)), desc(n))  %>%
   mutate(

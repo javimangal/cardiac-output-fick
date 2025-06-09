@@ -51,6 +51,8 @@ pacman::p_load(
   lme4,       # Used to fit linear mixed effects models.
   irr,        # Used to calculate intraclass correlation coefficient.
   boot,       # Used to perform bootstrap.
+  DHARMa,     # Used to simulate residuals for model diagnostics.
+  lattice,    # Used to evaluate random effects.
   gridExtra,  # Used to arrange multiple plots.
   gt,         # Used to print html tables.  
   report      # Used to cite packages used in this session.   
@@ -240,14 +242,57 @@ linear_mixed_model <- lmer(
   cardiac_output_Fick ~ cardiac_output_TTE + (1 | ID) + (1 | time_point), 
   data = data
   )
-
-# 95% Confidence Intervals
-linear_mixed_model_CI <- confint(linear_mixed_model, level = 0.95)
 ```
 
 ```{r}
 summary(linear_mixed_model)
 ```
+
+Would it be relevant to study the effect of the observer on the cardiac output measurements?
+
+```{r}
+boxplot(
+  cardiac_output_TTE ~ observer,
+  data = data,
+  main = "TTE Cardiac Output by Observer"
+  )
+```
+
+Test if fixed or random effect is relevant in the model. 
+
+```{r}
+linear_mixed_model_obs_fixed <- lmer(
+  cardiac_output_Fick ~ cardiac_output_TTE + observer + (1 | ID) + (1 | time_point),
+  data = data
+)
+summary(linear_mixed_model_obs_fixed)
+```
+
+```{r}
+linear_mixed_model_obs_random <- lmer(
+  cardiac_output_Fick ~ cardiac_output_TTE + (1 | ID) + (1 | time_point) + (1 | observer),
+  data = data
+)
+summary(linear_mixed_model_obs_random)
+```
+
+```{r}
+anova(linear_mixed_model, linear_mixed_model_obs_fixed)
+```
+
+Fixed effect not statistically significant, and AIC decreases, whereas BIC does not. This suggests that the model fit does not improve importantly. I will re-check in Bland-Altman analysis if including observer would be relevant.
+
+```{r}
+anova(linear_mixed_model, linear_mixed_model_obs_random)  # For random effect
+```
+
+Random effect not relevant, as AIC and BIC do not improve, and model is not significantly better than the simpler model. 
+
+```{r}
+# 95% Confidence Intervals
+linear_mixed_model_CI <- confint(linear_mixed_model_obs_fixed, level = 0.95)
+```
+
 
 {{< pagebreak >}}
 
@@ -259,7 +304,7 @@ icc <- icc(
   data[, c("cardiac_output_TTE", "cardiac_output_Fick")], 
   model = "twoway", 
   type = "agreement", 
-  unit = "average"
+  unit = "single"
   )
 
 icc
@@ -403,17 +448,24 @@ t.test(data$cardiac_output_TTE, data$cardiac_output_Fick, paired = TRUE)
 ```{r}
 # Fit the linear mixed model
 model <- lmer(differences ~ 1 + (1 | ID), data = data)
+model_observer <- lmer(differences ~ 1 + (1 | ID) + observer, data = data)
 
+anova(model, model_observer)
+```
+
+Despite not significantly improving the model, including observer as a fixed effect improved the distribution of observations around the mean, so this model was kept. 
+
+```{r}
 # Extract the fixed effect (mean difference) and random effects (within-subject variability)
-mean_diff <- fixef(model)[1]  # Mean difference
-sd_diff <- sqrt(VarCorr(model)$ID[1] + sigma(model)^2)  # Total variability (within-subject + residual)
+mean_diff <- fixef(model_observer)[1]  # Mean difference
+sd_diff <- sqrt(VarCorr(model_observer)$ID[1] + sigma(model_observer)^2)  # Total variability (within-subject + residual)
 
 upper_limit <- mean_diff + 1.96 * sd_diff
 lower_limit <- mean_diff - 1.96 * sd_diff
 ```
 
 ```{r}
-summary(model)
+summary(model_observer)
 ```
 
 ```{r}
@@ -421,7 +473,7 @@ summary(model)
 fig1A <- ggplot(data %>% mutate(`TTE Measurement` = "Mean Cardiac Output"),
        aes(x = mean_values, y = differences, color = `TTE Measurement`)) +
   geom_point(alpha = 0.6) +
-  geom_hline(yintercept = mean_diff, color = "blue", size = 1) +
+  geom_hline(yintercept = mean_diff, color = "blue", linewidth = 1) +
   geom_hline(yintercept = upper_limit, color = "red", linetype = "dashed") +
   geom_hline(yintercept = lower_limit, color = "red", linetype = "dashed") +
   labs(
@@ -446,7 +498,7 @@ fig1A
 fig1A <- ggplot(data %>% mutate(`Medición ECOTT` = "Promedio de GC"),
        aes(x = mean_values, y = differences, color = `Medición ECOTT`)) +
   geom_point(alpha = 0.6) +
-  geom_hline(yintercept = mean_diff, color = "blue", size = 1) +
+  geom_hline(yintercept = mean_diff, color = "blue", linewidth = 1) +
   geom_hline(yintercept = upper_limit, color = "red", linetype = "dashed") +
   geom_hline(yintercept = lower_limit, color = "red", linetype = "dashed") +
   labs(
@@ -495,16 +547,25 @@ model_long <- lmer(
   differences ~ 1 + (1 | ID) + (1 | ID:time_point) + (1 | TTE_measurement),
   data = data_long
 )
+model_long_observer <- lmer(
+  differences ~ 1 + (1 | ID) + (1 | ID:time_point) + (1 | TTE_measurement) + observer,
+  data = data_long
+)
+anova(model_long, model_long_observer)
+```
 
+As before, the model with observer not significantly better, but the distribution of observations improves by including it. This, will include. 
+
+```{r}
 # Extract mean difference (fixed effect)
-mean_diff_long <- fixef(model_long)[1]  # Mean difference (fixed effect)
+mean_diff_long <- fixef(model_long_observer)[1]  # Mean difference (fixed effect)
 
 # Extract variance components
-variance_components <- as.data.frame(VarCorr(model_long))
+variance_components <- as.data.frame(VarCorr(model_long_observer))
 var_id <- variance_components[variance_components$grp == "ID", "vcov"]  # Variance between participants
 var_time_point <- variance_components[variance_components$grp == "ID:time_point", "vcov"]  # Variance between time points within participants
 var_measurement <- variance_components[variance_components$grp == "TTE_measurement", "vcov"]  # Variance between measurements
-residual_variance <- sigma(model_long)^2  # Residual variance (measurement error)
+residual_variance <- sigma(model_long_observer)^2  # Residual variance (measurement error)
 
 # Compute total variability (sum of all variance components)
 total_variance <- var_id + var_time_point + var_measurement + residual_variance
@@ -517,13 +578,13 @@ upper_limit_long <- mean_diff_long + 1.96 * sd_diff_long
 lower_limit_long <- mean_diff_long - 1.96 * sd_diff_long
 
 # Test for systematic bias (null hypothesis: mean difference = 0)
-se_mean_diff_long <- sqrt(diag(vcov(model_long)))[1]  # Standard error of the fixed effect
+se_mean_diff_long <- sqrt(diag(vcov(model_long_observer)))[1]  # Standard error of the fixed effect
 z_statistic <- mean_diff_long / se_mean_diff_long
 p_value <- 2 * (1 - pnorm(abs(z_statistic)))  # Two-tailed p-value
 ```
 
 ```{r}
-summary(model_long)
+summary(model_long_observer)
 ```
 
 There was singularity in the prior model including a random effect for within-subject TTE measurements. Because this term is conceptually important to take into account the nested structure of the data, we will keep it in the model. Other alternatives would be to include it as a fixed effect, but this would not necessarily represent a meaningful variable to model. 
@@ -532,7 +593,7 @@ There was singularity in the prior model including a random effect for within-su
 # Bland-Altman plot for individual measurements
 fig1B <- ggplot(data_long, aes(x = mean_values, y = differences, color = TTE_measurement)) +
   geom_point(alpha = 0.6) +
-  geom_hline(yintercept = mean_diff_long, color = "blue", size = 1) +
+  geom_hline(yintercept = mean_diff_long, color = "blue", linewidth = 1) +
   geom_hline(yintercept = upper_limit_long, color = "red", linetype = "dashed") +
   geom_hline(yintercept = lower_limit_long, color = "red", linetype = "dashed") +
   labs(
@@ -555,12 +616,39 @@ fig1B <- ggplot(data_long, aes(x = mean_values, y = differences, color = TTE_mea
 fig1B
 ```
 
+## Residuals and random effects diagnostics
+
+```{r}
+res <- resid(model_long_observer)
+
+plot(fitted(model_long_observer), res,
+     xlab = "Fitted values", ylab = "Residuals",
+     main = "Residuals vs Fitted")
+abline(h = 0, col = "red")
+```
+
+Residuals randomly distributed, no apparent patterns. 
+
+```{r}
+sim_res <- simulateResiduals(model_long_observer)
+plot(sim_res)
+```
+
+Diagnostics form predicted residuals also show random distribution, with no heteroskedasticity or patterns, supporting lineraity assumption. No evidence of influential outliers. 
+
+```{r}
+ranef_vals <- ranef(model_long_observer)
+dotplot(ranef(model_long_observer, condVar = TRUE))
+```
+
+Simetric distribution, with bell curve shape, not showing strong outliers. Random effects for ID and ID:time_point relevant. For TTE measurement, no variation seen as expected due to singularity, therefore this term is not relevant for the model. As mentioned earlier, it was kept as it is considered conceptually relevant. Conclusion is that TTE measurements are quite consistent among each time point within participant.  
+
 ```{r}
 #| eval: false
 # Bland-Altman para medidas individuales
 fig1B <- ggplot(data_long, aes(x = mean_values, y = differences, color = TTE_measurement)) +
   geom_point(alpha = 0.6) +
-  geom_hline(yintercept = mean_diff_long, color = "blue", size = 1) +
+  geom_hline(yintercept = mean_diff_long, color = "blue", linewidth = 1) +
   geom_hline(yintercept = upper_limit_long, color = "red", linetype = "dashed") +
   geom_hline(yintercept = lower_limit_long, color = "red", linetype = "dashed") +
   labs(
@@ -655,7 +743,7 @@ cat("Precisionb (95% CI):", round(precisionb_lower, 2), "-", round(precisionb_up
 
 # Summary
 
-The mean cardiac output with TTE was `r mean(data$cardiac_output_TTE) %>% round(2)` (95% CI: `r ci_bca_mean_CO_TTE$bca[4] %>% round(2)` to `r ci_bca_mean_CO_TTE$bca[5] %>% round(2)`) L/min, and `r mean(data$cardiac_output_Fick) %>% round(2)` L/min (95% CI: `r ci_bca_mean_CO_Fick$bca[4] %>% round(2)` to `r ci_bca_mean_CO_Fick$bca[5] %>% round(2)`) for the Fick method. The correlation between the two methods was rho = `r correlation$estimate %>% round(2)` (95% CI: `r correlation$conf.int[1] %>% round(2)` to `r correlation$conf.int[2] %>% round(2)`, p=`r correlation$p.value %>% round(3)`). In a linear mixed model with random patient slopes, there was a change in Fick CO of `r linear_mixed_model@beta[2] %>% round(2)` (95% CI: `r linear_mixed_model_CI["cardiac_output_TTE",1] %>% round(2)` to `r linear_mixed_model_CI["cardiac_output_TTE",2] %>% round(2)`) L/min for each unit change in mean TTE CO. The ICC between TCE and Fick CO `r icc$value %>% round(2)` (95% CI: `r icc$lbound %>% round(2)` to `r icc$ubound %>% round(2)`). 
+The mean cardiac output with TTE was `r mean(data$cardiac_output_TTE) %>% round(2)` (95% CI: `r ci_bca_mean_CO_TTE$bca[4] %>% round(2)` to `r ci_bca_mean_CO_TTE$bca[5] %>% round(2)`) L/min, and `r mean(data$cardiac_output_Fick) %>% round(2)` L/min (95% CI: `r ci_bca_mean_CO_Fick$bca[4] %>% round(2)` to `r ci_bca_mean_CO_Fick$bca[5] %>% round(2)`) for the Fick method. The correlation between the two methods was rho = `r correlation$estimate %>% round(2)` (95% CI: `r correlation$conf.int[1] %>% round(2)` to `r correlation$conf.int[2] %>% round(2)`, p=`r correlation$p.value %>% round(3)`). In a linear mixed model with random patient slopes, there was a change in Fick CO of `r linear_mixed_model_obs_fixed@beta[2] %>% round(3)` (95% CI: `r linear_mixed_model_CI["cardiac_output_TTE",1] %>% round(3)` to `r linear_mixed_model_CI["cardiac_output_TTE",2] %>% round(3)`) L/min for each unit change in mean TTE CO. The ICC between TCE and Fick CO `r icc$value %>% round(2)` (95% CI: `r icc$lbound %>% round(2)` to `r icc$ubound %>% round(2)`). 
 
 The mean absolute difference in CO between TTE and Fick was `r MAD %>% round(2)` (95% CI: `r MAD_interval[1] %>% round(1)` to `r MAD_interval[2] %>% round(1)`) L/min. The coefficient of variation for an individual measurement of TTE was `r cv_TTE %>% round(1)`% and `r cv_Fick %>% round(2)`% for Fick. The mean CV of TTE for the repeated measurements per patient was `r mean(data$CV_TTE_CO_row) %>% round(1)`% (95% CI: `r ci_bca_CV$bca[4] %>% round(1)` to `r ci_bca_CV$bca[5] %>% round(1)`) and the CE was `r mean(data$CE_TTE_CO) %>% round(1)`% (95% CI: `r ci_bca_CE$bca[4] %>% round(1)` to `r ci_bca_CE$bca[5] %>% round(1)`), corresponding to a precision of `r precisiona %>% round(1)`% (95% CI: `r precisiona_lower %>% round(1)` to `r precisiona_upper %>% round(1)`). The MAPE of the Fick method compared to TTE was `r mape_point %>% round(1)`% (95% CI: `r ci_bca$bca[4] %>% round(1)` - `r ci_bca$bca[5] %>% round(1)`). The precision of the Fick method was `r precisionb %>% round(2)`% (95% CI: `r precisionb_lower %>% round(2)` to `r precisionb_upper %>% round(2)`). The LSC was `r (precisiona * sqrt(2)) %>% round(1)`% (95% CI: `r (precisiona_lower * sqrt(2)) %>% round(1)` to `r (precisiona_upper * sqrt(2)) %>% round(1)`) for TTE and `r (precisionb * sqrt(2)) %>% round(1)`% (95% CI: `r (precisionb_lower * sqrt(2)) %>% round(1)` to `r (precisionb_upper * sqrt(2)) %>% round(1)`) for the Fick method.
 
@@ -663,9 +751,9 @@ The mean absolute difference in CO between TTE and Fick was `r MAD %>% round(2)`
 
 ```{r}
 ggsave(
-  filename = file.path(figfolder, "Figure1.png"),
+  filename = file.path(figfolder, "Figure1.tiff"),
   plot = arrangeGrob(fig1A, fig1B, nrow = 2),
-  width = 7, height = 10, dpi = 600, bg = "white"
+  width = 7, height = 10, dpi = 300, bg = "white"
 )
 ```
 
