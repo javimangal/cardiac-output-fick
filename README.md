@@ -1,6 +1,6 @@
 # The Two-Gasometry Indirect Fick Method for Cardiac Output Measurement in Critical Patients
 
-[![Dataverse](https://img.shields.io/badge/Dataverse%20DOI-10.7910/DVN/J4ONSU-red)](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/J4ONSU) [![Preprint DOI](https://img.shields.io/badge/preprint_DOI-10.1101%2F2025.03.05.25323438v1-%23000080?label=medRxiv&link=https%3A%2F%2Fwww.medrxiv.org%2Fcontent%2F10.1101%2F2025.03.05.25323438v1)](https://www.medrxiv.org/content/10.1101/2025.03.05.25323438v1)
+[![Dataverse](https://img.shields.io/badge/Dataverse%20DOI-10.7910/DVN/J4ONSU-red)](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/J4ONSU) [![Preprint DOI](https://img.shields.io/badge/preprint_DOI-10.1101%2F2025.03.05.25323438v2-%23000080?label=medRxiv&link=https%3A%2F%2Fwww.medrxiv.org%2Fcontent%2F10.1101%2F2025.03.05.25323438v2)](https://www.medrxiv.org/content/10.1101/2025.03.05.25323438v2)
 
 Project documentation for reproducibility of the study ***"The Two-Gasometry Indirect Fick Method for Cardiac Output Measurement in Critical Patients"***. The study aimed to determine agreement and clinical interchangeability of cardiac output and cardiac index measurements from transthoracic echocardiography (reference test) and the two-gasometry indirect Fick method (index test) in critical care patients from a low-resource hospital in Querétaro, México. 
 
